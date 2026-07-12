@@ -24,5 +24,5 @@ provider "aws" {
 # 3. Google Cloud プロバイダーの個別設定
 provider "google" {
   project = "multi-cloud-secure-ai-project" # 操作対象のGCPプロジェクトID
-  region  = "asia-northeast1"             # 東京リージョンをデフォルトに設定
+  region  = "asia-northeast1"               # 東京リージョンをデフォルトに設定
 }

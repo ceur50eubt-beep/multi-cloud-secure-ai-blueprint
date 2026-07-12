@@ -1,25 +1,28 @@
 # Multi-Cloud Secure AI Blueprint (AWS × Google Cloud)
 
-実務の知見をベースに、ゼロトラストとIaCによる「守りと攻めを両立するインフラ設計」のベストプラクティス（Blueprint）を構想・設計しています。近々、各クラウドに対応したインフラコード（Terraform）として公開予定です。
+実務の知見をベースに、ゼロトラストとIaCによる「守りと攻めを両立するインフラ設計」のベストプラクティスを実装しています。
 
 ## 🏗️ 設計の要点
 
-### 1. キーレス・ゼロトラスト認証
-WIF (Workload Identity Federation) を実装し、サービスアカウントキーを一切発行しないクラウド間連携を実現。GitHub ActionsからのデプロイもOIDCによる一時トークン認証で完結させます。
-
-### 2. コードによる統治（Governance as Code）
-AWS OrganizationsによるSCPの強制適用と、AWS Config + SSMによるドリフト（設定乖離）の自動修復をインフラコード化。手動変更を許さないGitOps運用を前提としています。
-
-### 3. セキュアなAIプラットフォーム
-Vertex AI Agent Builder × BigQueryを活用したText-to-SQL環境の構築。安全フィルターを内包し、AIによるデータ汚染を防ぐガードレールをコードレベルで定義します。
+1. **キーレス・ゼロトラスト認証**: WIFを実装し、サービスアカウントキーを一切発行しないクラウド間連携を実現。GitHub ActionsからのデプロイもOIDCによる一時トークン認証で完結させます。
+2. **コードによる統治（Governance as Code）**: AWS OrganizationsによるSCPの強制適用と、AWS Configによるドリフト（設定乖離）監視の枠組みをインフラコード化。
+3. **セキュアなAIプラットフォーム**: Vertex AI Agent Builder × BigQueryを活用したText-to-SQL環境の構築。安全フィルターを内包し、最小権限（ReadOnly）と監査ログによるガードレールをコードで定義します。
 
 ## 📂 プロジェクト構成
-本リポジトリは、以下の役割に基づいて各インフラコンポーネントをモジュール化・配置しています。
 
-- `providers.tf` : マルチクラウド（AWS / Google Cloud）プロバイダの一元管理設定
-- `backend.tf` : Amazon S3による状態管理と、最新仕様（`use_lockfile`）を用いたステートロック（排他制御）の定義
-- `gcp_wif.tf` : WIF（Workload Identity Federation）を用いたキーレス・ゼロトラスト認証の設定
-- `aws_governance.tf` : AWS Organizations SCPやAWS Configによる統治ガードレールの設定
-- `gcp_ai_agent.tf` : Vertex AI Agent Builder × BigQuery連携における、最小権限（ReadOnly）と監査ログの設定
-- `.github/workflows/terraform.yml` : OIDC認証を活用した、安全なGitOps自動化パイプラインの設定
-- `.gitignore` : プラグインバイナリや機密情報（tfstate等）の混入を防ぐ、構成管理のガードレール設定
+本リポジトリは、以下の役割に基づいて各インフラコンポーネントをモジュール化しています。
+
+- **providers.tf** : マルチクラウド（AWS / Google Cloud）プロバイダの一元管理設定
+- **backend.tf** : S3による状態管理と、最新仕様（use_lockfile）を用いたステートロックの定義
+- **gcp_wif.tf** : WIFを用いたGitHub Actionsからのキーレス・ゼロトラスト認証設定
+- **aws_governance.tf** : AWS Organizations SCPやAWS Configによる統治ガードレールの設定
+- **gcp_ai_agent.tf** : Vertex AI × BigQuery連携における、最小権限と監査ログのIAM設定
+- **.github/workflows/terraform.yml** : OIDC認証を活用したGitOps自動化パイプライン
+- **.gitignore** : プラグインや機密情報の混入を防ぐガードレール設定
+
+## ⚙️ セットアップ手順（Bootstrap）
+
+リモートバックエンドを使用するため、初回構築時は以下の手順が必要です。
+
+1. **バケット作成**: `backend.tf` を一時的にコメントアウトし、`terraform init` と `apply` を実行してステート用S3バケットを作成します。
+2. **ステート移行**: 作成後、`backend.tf` のコメントを解除し、再度 `terraform init` を実行することで、ローカルのステートをS3へ安全に移行（Migration）させます。
