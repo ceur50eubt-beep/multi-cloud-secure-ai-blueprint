@@ -1,35 +1,27 @@
-resource "google_iam_workload_identity_pool" "main_pool" {
-  workload_identity_pool_id = "multi-cloud-secure-pool"
-  display_name              = "Multi-Cloud Secure AI Blueprint Pool"
-  description               = "GitHub Actions integration for zero-trust authentication"
+# 1. Workload Identity プール（AWSワークロード用の信頼境界）
+resource "google_iam_workload_identity_pool" "aws_pool" {
+  workload_identity_pool_id = "aws-ai-identity-pool"
+  display_name              = "AWS AI Identity Pool"
+  description               = "Identity pool for federating AWS AI orchestrator workloads"
 }
 
-resource "google_iam_workload_identity_pool_provider" "github_provider" {
-  workload_identity_pool_id          = google_iam_workload_identity_pool.main_pool.workload_identity_pool_id
-  workload_identity_pool_provider_id = "github-provider"
-  display_name                       = "GitHub Actions Provider"
+# 2. AWS OIDC プロバイダー（AWS STSトークンを直接検証）
+resource "google_iam_workload_identity_pool_provider" "aws_provider" {
+  workload_identity_pool_id          = google_iam_workload_identity_pool.aws_pool.workload_identity_pool_id
+  workload_identity_pool_provider_id = "aws-sts-provider"
+  display_name                       = "AWS STS Provider"
 
-  oidc {
-    issuer_uri = "https://token.actions.githubusercontent.com"
+  aws {
+    account_id = var.aws_account_id
   }
 
+  # AWSのクレームをGCPの属性にマッピング
   attribute_mapping = {
-    "google.subject"             = "assertion.sub"
-    "attribute.repository"       = "assertion.repository"
-    "attribute.repository_owner" = "assertion.repository_owner"
+    "google.subject"        = "assertion.arn"
+    "attribute.aws_account" = "assertion.account"
+    "attribute.aws_role"    = "assertion.arn.extract('/assumed-role/{role}/')"
   }
-}
 
-resource "google_service_account" "wif_executor" {
-  account_id   = "wif-executor-sa"
-  display_name = "Workload Identity Federation Executor"
-}
-
-resource "google_service_account_iam_binding" "wif_impersonation" {
-  service_account_id = google_service_account.wif_executor.name
-  role               = "roles/iam.workloadIdentityUser"
-
-  members = [
-    "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.main_pool.name}/attribute.repository_owner/ceur50eubt-beep"
-  ]
+  # 指定したAWSアカウントIDからのアクセスのみに厳格制限（セキュリティ境界）
+  attribute_condition = "attribute.aws_account == '${var.aws_account_id}'"
 }

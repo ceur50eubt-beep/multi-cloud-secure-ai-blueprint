@@ -1,39 +1,54 @@
-# ==========================================================================
-# AWS Governance & Remote State Backend Resources
-# ==========================================================================
-# 実務運用を見据えた「守り」の基盤設定。
-# AWS Organizationsによる統治と、安全なTerraform状態管理を実現します。
+# AIオーケストレーターが利用するAWS IAMロール（ECS / Lambda / EKS想定）
+resource "aws_iam_role" "ai_orchestrator" {
+  name        = "enterprise-ai-orchestrator-role"
+  description = "Role assumed by AI workloads to request cross-cloud GCP access"
 
-# 1. 状態管理用S3バケット（backend.tfで使用）
-resource "aws_s3_bucket" "terraform_state" {
-  bucket        = "multi-cloud-secure-ai-blueprint-tfstate"
-  force_destroy = false
-}
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = [
+            "ecs-tasks.amazonaws.com",
+            "lambda.amazonaws.com"
+          ]
+        }
+      }
+    ]
+  })
 
-# 2. 統治：AWS Organizations SCP（ガバナンスガードレール）
-# 例：信頼できないリージョンへのアクセス制限などをここに記述
-resource "aws_organizations_policy" "governance_scp" {
-  name        = "StrictGovernancePolicy"
-  description = "SCP to enforce security guardrails across AWS accounts"
-  content     = <<POLICY
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Deny",
-      "Action": "s3:DeleteBucket",
-      "Resource": "*"
-    }
-  ]
-}
-POLICY
-}
-
-# 3. コンプライアンス：AWS Configルール（ドリフト監視の枠組み）
-resource "aws_config_config_rule" "drift_detection" {
-  name = "terraform-drift-detection"
-  source {
-    owner             = "AWS"
-    source_identifier = "REQUIRED_TAGS"
+  tags = {
+    Environment = "production"
+    ManagedBy   = "terraform"
+    Purpose     = "multi-cloud-ai"
   }
+}
+
+# 最小権限ポリシー：自身のCallerIdentity取得とCloudWatchメトリクス送信のみ許可
+resource "aws_iam_policy" "orchestrator_base" {
+  name        = "enterprise-ai-orchestrator-policy"
+  description = "Minimal baseline policy for AWS AI workload"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowCloudWatchLogs"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "orchestrator_attach" {
+  role       = aws_iam_role.ai_orchestrator.name
+  policy_arn = aws_iam_policy.orchestrator_base.arn
 }

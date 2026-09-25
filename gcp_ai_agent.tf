@@ -1,35 +1,22 @@
-resource "google_bigquery_dataset" "ai_knowledge_base" {
-  dataset_id                 = "corporate_knowledge_db"
-  friendly_name              = "Corporate Knowledge Base"
-  location                   = "asia-northeast1"
-  delete_contents_on_destroy = false
-}
-
-resource "google_service_account" "ai_agent_sa" {
+# 1. AIエージェント実行専用のサービスアカウント（静的キーは発行しない）
+resource "google_service_account" "ai_agent" {
   account_id   = "vertex-ai-agent-sa"
-  display_name = "Vertex AI Agent Builder Service Account"
+  display_name = "Vertex AI Autonomous Agent Service Account"
+  description  = "Dedicated SA for cross-cloud AI execution without static keys"
 }
 
-resource "google_project_iam_member" "ai_agent_vertex_user" {
-  project = "multi-cloud-secure-ai-project"
+# 2. WIFプール経由のAWS IAMロールに対してのみ「サービスアカウント借用（Impersonation）」を許可
+resource "google_service_account_iam_member" "wif_impersonation" {
+  service_account_id = google_service_account.ai_agent.name
+  role               = "roles/iam.workloadIdentityUser"
+
+  # AWSの特定IAMロールからのフェデレーションアクセスに限定
+  member = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.aws_pool.name}/attribute.aws_role/enterprise-ai-orchestrator-role"
+}
+
+# 3. 必要最小限のVertex AI実行権限のみを付与（Project Editor等の過剰権限を排除）
+resource "google_project_iam_member" "vertex_ai_user" {
+  project = var.gcp_project_id
   role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${google_service_account.ai_agent_sa.email}"
-}
-
-resource "google_storage_bucket" "audit_logs" {
-  name     = "multi-cloud-secure-ai-blueprint-audit-logs"
-  location = "asia-northeast1"
-}
-
-resource "google_logging_project_sink" "ai_audit_sink" {
-  name                   = "vertex-ai-audit-logs-sink"
-  destination            = "storage.googleapis.com/${google_storage_bucket.audit_logs.name}"
-  filter                 = "resource.type=\"aiplatform.googleapis.com/Endpoint\" OR resource.type=\"bigquery_dataset\""
-  unique_writer_identity = true
-}
-
-resource "google_storage_bucket_iam_member" "sink_writer" {
-  bucket = google_storage_bucket.audit_logs.name
-  role   = "roles/storage.objectCreator"
-  member = google_logging_project_sink.ai_audit_sink.writer_identity
+  member  = "serviceAccount:${google_service_account.ai_agent.email}"
 }
